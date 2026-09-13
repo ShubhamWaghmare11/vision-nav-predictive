@@ -1,0 +1,24 @@
+data/
+runs/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# editor
+.vscode/
+.idea/
+
+# jupyter
+.ipynb_checkpoints/
+
+# misc
+*.zip
+*.log
+frames/
+frames_junctions/
+frames_junctions2/
