@@ -10,6 +10,7 @@ from pathlib import Path
 from src.models.policy import VisualPolicy
 from src.models.auxiliary import EMAEncoder, A1Head, A2Head, A3Head, make_projector
 from src.data.dataset import DrivingDataset
+from src.data.augmentation import GPUAugment
 
 
 class Trainer:
@@ -29,6 +30,8 @@ class Trainer:
             n_heads=config.get("n_heads", 4),
             dropout=config.get("dropout", 0.1),
         ).to(self.device)
+
+        self.gpu_augment = GPUAugment().to(self.device)
 
         # ── auxiliary components ────────────────────────────────────────────
         self.arm = config.get("arm", "a0")
@@ -89,21 +92,19 @@ class Trainer:
             config["train_index"],
             K=config.get("K", 8),
             H=config.get("chunk_len", 8),
-            augment=True,
         )
         print("Loading validation dataset...")
         self.val_ds = DrivingDataset(
             config["val_index"],
             K=config.get("K", 8),
             H=config.get("chunk_len", 8),
-            augment=False,
         )
 
         self.train_loader = DataLoader(
             self.train_ds,
             batch_size=config.get("batch_size", 256),
             shuffle=True,
-            num_workers=4,
+            num_workers=2,
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=2,
@@ -129,11 +130,19 @@ class Trainer:
     # ── single training step ───────────────────────────────────────────────
 
     def _step(self, batch):
-        frames        = batch["frames"].to(self.device)
-        future_frames = batch["future_frames"].to(self.device)
-        proprio       = batch["proprio"].to(self.device)
-        command       = batch["command"].to(self.device)
-        action_chunk  = batch["action_chunk"].to(self.device)
+        frames        = batch["frames"].to(self.device, non_blocking=True)
+        future_frames = batch["future_frames"].to(self.device, non_blocking=True)
+        proprio       = batch["proprio"].to(self.device, non_blocking=True)
+        command       = batch["command"].to(self.device, non_blocking=True)
+        action_chunk  = batch["action_chunk"].to(self.device, non_blocking=True)
+
+        # batched GPU-side augmentation — replaces the old per-sample CPU
+        # augmentation in DrivingDataset. hist + future frames are augmented
+        # together so crop/color jitter stays consistent across the stack.
+        K = frames.size(1)
+        combined = torch.cat([frames, future_frames], dim=1)
+        combined = self.gpu_augment(combined)
+        frames, future_frames = combined[:, :K], combined[:, K:]
 
         pred_actions, h_t = self.policy(frames, proprio, command)
         bc_loss = F.smooth_l1_loss(pred_actions, action_chunk, beta=0.1)
@@ -185,10 +194,10 @@ class Trainer:
         total_bc = 0.0
         n = 0
         for batch in self.val_loader:
-            frames       = batch["frames"].to(self.device)
-            proprio      = batch["proprio"].to(self.device)
-            command      = batch["command"].to(self.device)
-            action_chunk = batch["action_chunk"].to(self.device)
+            frames       = batch["frames"].to(self.device, non_blocking=True)
+            proprio      = batch["proprio"].to(self.device, non_blocking=True)
+            command      = batch["command"].to(self.device, non_blocking=True)
+            action_chunk = batch["action_chunk"].to(self.device, non_blocking=True)
             pred, _      = self.policy(frames, proprio, command)
             total_bc    += F.smooth_l1_loss(pred, action_chunk, beta=0.1).item()
             n           += 1
@@ -215,9 +224,48 @@ class Trainer:
 
     # ── main training loop ─────────────────────────────────────────────────
 
+    def _speed_test(self, n_batches: int = 20):
+        """Quick throughput probe: full step (data + augment + fwd/bwd) speed."""
+        print(f"Running {n_batches}-batch speed test...", flush=True)
+        data_iter = iter(self.train_loader)
+        batch_size = self.cfg.get("batch_size", 256)
+
+        # warm up (CUDA context, cuDNN autotune, first-iteration overhead)
+        for _ in range(3):
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(self.train_loader)
+                batch = next(data_iter)
+            self._step(batch)
+
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+        for _ in range(n_batches):
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(self.train_loader)
+                batch = next(data_iter)
+            self._step(batch)
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+        elapsed = time.time() - t0
+
+        steps_per_sec   = n_batches / elapsed
+        samples_per_sec = steps_per_sec * batch_size
+        print(
+            f"Speed test: {steps_per_sec:.1f} steps/sec "
+            f"({samples_per_sec:.0f} samples/sec) over {n_batches} batches",
+            flush=True,
+        )
+
     def train(self):
         print(f"Training arm={self.arm}, steps={self.total_steps}")
         self.policy.train()
+
+        self._speed_test()
 
         log_every  = 100
         val_every  = 1_000

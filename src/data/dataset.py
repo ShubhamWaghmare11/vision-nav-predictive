@@ -3,8 +3,6 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from pathlib import Path
-import torchvision.transforms.functional as TF
-import random
 _NPZ_CACHE = {}
 
 
@@ -12,6 +10,9 @@ class DrivingDataset(Dataset):
     """
     Preloads all episode data into RAM at init time.
     Faster than per-sample disk reads on Windows.
+
+    Returns raw uint8 frames — augmentation happens batched on GPU in the
+    trainer (see src/data/augmentation.py), not here.
     """
 
     def __init__(
@@ -20,14 +21,17 @@ class DrivingDataset(Dataset):
         K:          int = 8,
         H:          int = 8,
         horizons:   list = [2, 4, 8],
-        augment:    bool = True,
     ):
         self.df       = pd.read_parquet(index_path)
         self.K        = K
         self.H        = H
         self.horizons = horizons
         self.max_k    = max(horizons)
-        self.augment  = augment
+
+        # plain numpy arrays for the columns read on every __getitem__ —
+        # avoids per-call pandas.iloc overhead (Series construction).
+        self._npz_paths = self.df["npz_path"].to_numpy()
+        self._t         = self.df["t"].to_numpy()
 
         print("Preloading episodes into RAM...", flush=True)
         self._episodes = {}
@@ -48,9 +52,8 @@ class DrivingDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row  = self.df.iloc[idx]
-        t    = int(row["t"])
-        data = self._episodes[row["npz_path"]]
+        t    = int(self._t[idx])
+        data = self._episodes[self._npz_paths[idx]]
 
         frames_all = data["frames"]
         proprios   = data["proprios"]
@@ -81,9 +84,6 @@ class DrivingDataset(Dataset):
             np.ascontiguousarray(fut_frames).transpose(0, 3, 1, 2)
         )
 
-        if self.augment:
-            hist_t, fut_t = self._augment(hist_t, fut_t)
-
         return {
             "frames":        hist_t,
             "future_frames": fut_t,
@@ -92,30 +92,13 @@ class DrivingDataset(Dataset):
             "action_chunk":  torch.tensor(chunk, dtype=torch.float32),
         }
 
-    def _augment(self, hist, fut):
-        all_frames = torch.cat([hist, fut], dim=0).float()
-        pad = 4
-        all_frames = TF.pad(all_frames, pad, padding_mode='edge')
-        i = random.randint(0, 2 * pad)
-        j = random.randint(0, 2 * pad)
-        all_frames = all_frames[:, :, i:i+84, j:j+84]
-        if random.random() < 0.8:
-            all_frames = TF.adjust_brightness(all_frames, 1.0 + random.uniform(-0.2, 0.2))
-            all_frames = TF.adjust_contrast(all_frames,  1.0 + random.uniform(-0.2, 0.2))
-            all_frames = TF.adjust_hue(all_frames, random.uniform(-0.02, 0.02))
-        if random.random() < 0.1:
-            all_frames = TF.rgb_to_grayscale(all_frames, num_output_channels=3)
-        all_frames = all_frames.clamp(0, 255).byte()
-        K = hist.size(0)
-        return all_frames[:K], all_frames[K:]
-
 if __name__ == "__main__":
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
     from torch.utils.data import DataLoader
     import time
 
-    ds = DrivingDataset("data/index_50k.parquet", augment=True)
+    ds = DrivingDataset("data/index_50k.parquet")
     print(f"Dataset size: {len(ds)} samples")
 
     sample = ds[0]
