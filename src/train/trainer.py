@@ -103,14 +103,17 @@ class Trainer:
             self.train_ds,
             batch_size=config.get("batch_size", 256),
             shuffle=True,
-            num_workers=0,
-            pin_memory=(self.device.type == "cuda"),
+            num_workers=4,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
         )
         self.val_loader = DataLoader(
             self.val_ds,
             batch_size=256,
             shuffle=False,
-            num_workers=0,
+            num_workers=2,
+            persistent_workers=True,
         )
 
         # ── logging ────────────────────────────────────────────────────────
