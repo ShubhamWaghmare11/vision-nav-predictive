@@ -218,7 +218,7 @@ class Trainer:
 
         log_every  = 100
         val_every  = 1_000
-        save_every = 5_000
+        save_every = 1_000
 
         data_iter = iter(self.train_loader)
         t0 = time.time()
