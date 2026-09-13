@@ -179,10 +179,13 @@ class Trainer:
             ):
                 ep.data.mul_(tau).add_(op.data, alpha=1 - tau)
 
+        # detached tensors, not .item() — forcing a CPU sync every step kills
+        # CPU/GPU overlap. Caller syncs (via .item()) only when it needs to
+        # actually log, e.g. every log_every steps.
         return {
-            "bc_loss":    bc_loss.item(),
-            "aux_loss":   aux_loss.item(),
-            "total_loss": total_loss.item(),
+            "bc_loss":    bc_loss.detach(),
+            "aux_loss":   aux_loss.detach(),
+            "total_loss": total_loss.detach(),
             "lr":         self.scheduler.get_last_lr()[0],
         }
 
@@ -274,6 +277,13 @@ class Trainer:
         data_iter = iter(self.train_loader)
         t0 = time.time()
 
+        # running sums stay on-GPU as tensors — only synced to CPU (.item())
+        # once every log_every steps, instead of every step.
+        sum_bc    = torch.zeros((), device=self.device)
+        sum_aux   = torch.zeros((), device=self.device)
+        sum_total = torch.zeros((), device=self.device)
+        last_lr   = 0.0
+
         while self.step < self.total_steps:
             # get next batch, restart loader if exhausted
             try:
@@ -285,18 +295,30 @@ class Trainer:
             metrics = self._step(batch)
             self.step += 1
 
+            sum_bc    += metrics["bc_loss"]
+            sum_aux   += metrics["aux_loss"]
+            sum_total += metrics["total_loss"]
+            last_lr    = metrics["lr"]
+
             if self.step % log_every == 0:
                 elapsed = time.time() - t0
-                metrics["steps_per_sec"] = log_every / elapsed
-                self._log(metrics)
+                logged = {
+                    "bc_loss":        (sum_bc / log_every).item(),
+                    "aux_loss":       (sum_aux / log_every).item(),
+                    "total_loss":     (sum_total / log_every).item(),
+                    "lr":             last_lr,
+                    "steps_per_sec":  log_every / elapsed,
+                }
+                self._log(logged)
                 print(
                     f"step {self.step:06d} | "
-                    f"bc={metrics['bc_loss']:.4f} "
-                    f"aux={metrics['aux_loss']:.4f} "
-                    f"lr={metrics['lr']:.2e} "
-                    f"sps={metrics['steps_per_sec']:.1f}",
+                    f"bc={logged['bc_loss']:.4f} "
+                    f"aux={logged['aux_loss']:.4f} "
+                    f"lr={logged['lr']:.2e} "
+                    f"sps={logged['steps_per_sec']:.1f}",
                     flush=True,
                 )
+                sum_bc.zero_(); sum_aux.zero_(); sum_total.zero_()
                 t0 = time.time()
 
             if self.step % val_every == 0:
