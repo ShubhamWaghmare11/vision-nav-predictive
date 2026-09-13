@@ -55,7 +55,7 @@ class VisualPolicy(nn.Module):
         returns: (B, T, d_model)   — per-frame latents
         """
         B, T, C, H, W = frames.shape
-        flat = frames.view(B * T, C, H, W).float() / 255.0
+        flat = frames.reshape(B * T, C, H, W).float() / 255.0
         z = self.encoder(flat)
         return z.view(B, T, -1)
 
