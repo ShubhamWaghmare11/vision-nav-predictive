@@ -129,5 +129,5 @@ if __name__ == "__main__":
             break
     elapsed = time.time() - t0
     print(f"\n10 batches of 32 in {elapsed:.2f}s → "
-          f"{10*32/elapsed:.0f} samples/s (num_workers=4)")
+          f"{10*32/elapsed:.0f} samples/s (num_workers=0)")
     print("Dataset OK")

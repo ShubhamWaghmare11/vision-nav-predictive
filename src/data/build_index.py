@@ -56,6 +56,7 @@ def make_regime_splits(index_path: str, out_dir: str, seed: int = 42):
 
     # shuffle at episode level to avoid contiguous-episode bias
     ep_ids = df["ep_id"].unique()
+    ep_ids = ep_ids.tolist()
     rng.shuffle(ep_ids)
 
     splits = {"50k": 50_000, "150k": 150_000, "500k": len(df)}

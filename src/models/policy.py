@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-from encoder import CNNEncoder
-from transformer import TransformerTrunk
-
+from src.models.encoder import CNNEncoder
+from src.models.transformer import TransformerTrunk
 
 class ChunkHead(nn.Module):
     """

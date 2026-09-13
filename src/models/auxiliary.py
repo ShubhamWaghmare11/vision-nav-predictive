@@ -104,7 +104,7 @@ class A1Head(nn.Module):
         total = 0.0
         for i, k in enumerate(self.HORIZONS):
             # future frame at horizon k (0-indexed: k=2 → index 1)
-            fut = future_frames[:, k - 1:k, :, :, :]    # (B,1,3,84,84)
+            fut = future_frames[:, i:i+1, :, :, :]     # (B,1,3,84,84)
             with torch.no_grad():
                 z_target = ema_encoder(fut).squeeze(1)   # (B, 256)
                 if ema_proj is not None:
@@ -211,7 +211,7 @@ class A3Head(nn.Module):
 
         total = 0.0
         for i, k in enumerate(self.HORIZONS):
-            fut = future_frames[:, k - 1:k, :, :, :]
+            fut = future_frames[:, i:i+1, :, :, :] 
             with torch.no_grad():
                 z_target = ema_encoder(fut).squeeze(1)
                 if ema_proj is not None:

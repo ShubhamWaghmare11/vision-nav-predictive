@@ -40,6 +40,15 @@ def collect_episodes(
         raw_obs, _ = env.reset(seed=seed)
         reset_command_state(env)
 
+        # spawn perturbation for recovery demonstrations
+        try:
+            import math
+            vehicle = env.agent
+            heading_perturb = float(np.random.uniform(-8, 8)) * math.pi / 180.0
+            vehicle.set_heading_theta(vehicle.heading_theta + heading_perturb)
+        except Exception:
+            pass
+
         # per-episode buffers
         frames   = []
         proprios = []
