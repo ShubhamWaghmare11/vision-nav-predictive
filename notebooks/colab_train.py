@@ -164,7 +164,7 @@ else:
     latest = ckpts[-1]
     print(f"Resuming from {latest.name}")
 
-    ckpt   = torch.load(latest, map_location="cpu")
+    ckpt   = torch.load(latest, map_location="cpu", weights_only=False)
     config = ckpt["config"]
     config["train_index"] = config["train_index"].replace(
         "/content/data", "/content/data"
@@ -218,7 +218,7 @@ from src.env.metadrive_wrapper import TEST_CFG
 RUN_NAME = "a0_50k_s0"
 OUT_DIR  = f"/content/drive/MyDrive/vision-nav/runs/{RUN_NAME}"
 
-ckpt   = torch.load(f"{OUT_DIR}/ckpt_060000_final.pt", map_location="cpu")
+ckpt   = torch.load(f"{OUT_DIR}/ckpt_060000_final.pt", map_location="cpu", weights_only=False)
 cfg    = ckpt["config"]
 device = torch.device("cuda")
 
