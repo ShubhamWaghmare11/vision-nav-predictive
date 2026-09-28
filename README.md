@@ -2,6 +2,15 @@
 
 A controlled study on whether action-conditioned future latent prediction improves visual representations learned during behaviour cloning for autonomous driving, and whether those representations transfer to RL fine-tuning.
 
+## Paper
+
+**Predictive Visual Representations for Generalizable Vision-Based Navigation**
+Shubham Waghmare, 2026
+
+Published on Zenodo: https://doi.org/10.5281/zenodo.23009957
+
+
+
 ## Research Question
 
 Does adding an action-conditioned future latent prediction auxiliary objective during BC training produce better visual encoders — as measured by (1) generalisation to unseen road layouts and (2) sample efficiency in downstream PPO fine-tuning?
@@ -93,3 +102,5 @@ pip install metadrive-simulator==0.4.3 torch torchvision
 ## Related Work
 
 This project is a companion to [LLM Alignment Study](https://github.com/ShubhamWaghmare11/llm-alignment-study) — a longitudinal CKA/RSA analysis of representation evolution across pretraining → SFT → DPO in a 334M parameter language model. Together they study how training objectives shape internal representations across two very different domains.
+
+
